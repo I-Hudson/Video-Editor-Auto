@@ -1,0 +1,12 @@
+﻿App.obj : error LNK2019: unresolved external symbol _av_dict_get referenced in function _main
+App.obj : error LNK2019: unresolved external symbol _avformat_open_input referenced in function _main
+App.obj : error LNK2019: unresolved external symbol _avformat_close_input referenced in function _main
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\avcodec.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\avdevice.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\avfilter.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\avformat.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\avutil.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\postproc.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\swresample.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\deps\ffmpeg\lib\swscale.lib : warning LNK4272: library machine type 'x64' conflicts with target machine type 'x86'
+E:\Users\Documents\SourceControl\Github\C++ Porjects\Video Editor Auto\bin\Debug\Video Editor Auto.exe : fatal error LNK1120: 3 unresolved externals
