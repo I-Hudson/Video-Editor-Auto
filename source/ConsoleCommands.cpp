@@ -33,6 +33,10 @@ void ConsoleCommands::triggerCommand(std::string a_command)
 			it->second[i]();
 		}
 	}
+	else
+	{
+		std::cout << "Unknow command. Use --help to show all commands. \n";
+	}
 }
 
 /*

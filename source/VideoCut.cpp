@@ -111,17 +111,20 @@ void VideoCut::frameRateCommand()
 */
 bool VideoCut::openInputFile()
 {
+	int ret = 0;
 	// open input file
-	if (avformat_open_input(&m_ifmtCtx, m_inFileName.c_str(), nullptr, nullptr) != 0)
+	if ((ret = avformat_open_input(&m_ifmtCtx, m_inFileName.c_str(), nullptr, nullptr)) != 0)
 	{
 		//error message
+		error(ret, "Input file could not be found or opened.");
 		return false;
 	}
 
 	// find file info
-	if (avformat_find_stream_info(m_ifmtCtx, nullptr) < 0)
+	if ((ret = avformat_find_stream_info(m_ifmtCtx, nullptr)) < 0)
 	{
 		//error message
+		error(ret, "Input file could not find stream.");
 		return false;
 	}
 
@@ -139,13 +142,15 @@ bool VideoCut::openInputFile()
 	if (!m_decCtx)
 	{
 		//error message
+		error(1, "Could not alloc codec context3.");
 		return false;
 	}
 
 	// get a pointer to the codec context for the video stream
-	if (avcodec_parameters_to_context(m_decCtx, m_ifmtCtx->streams[m_videoStreamIndex]->codecpar) != 0)
+	if ((ret = avcodec_parameters_to_context(m_decCtx, m_ifmtCtx->streams[m_videoStreamIndex]->codecpar)) != 0)
 	{
 		//error message
+		error(ret, "Could not fill condec context from codec parameters.");
 		return false;
 	}
 
@@ -155,13 +160,15 @@ bool VideoCut::openInputFile()
 	if (!m_decCodec)
 	{
 		//error message
+		error(1, "Could not find decoder.");
 		return false;
 	}
 
 	// open the decodec
-	if (avcodec_open2(m_decCtx, m_decCodec, nullptr) < 0)
+	if ((ret = avcodec_open2(m_decCtx, m_decCodec, nullptr)) < 0)
 	{
 		//error message
+		error(ret, "Could not open decoder.");
 		return false;
 	}
 
@@ -173,10 +180,12 @@ bool VideoCut::openInputFile()
 */
 bool VideoCut::openOutputFile()
 {
-	avformat_alloc_output_context2(&m_ofmtCtx, nullptr, nullptr, m_outFileName.c_str());
-	if (!m_ofmtCtx)
+	int ret = 0;
+
+	if ((ret = avformat_alloc_output_context2(&m_ofmtCtx, nullptr, nullptr, m_outFileName.c_str())) != 0)
 	{
 		//error message
+		error(ret, "Could not alloc output context.");
 		return false;
 	}
 	// assign format context
@@ -188,6 +197,7 @@ bool VideoCut::openOutputFile()
 	if (!m_encCodec)
 	{
 		//error message
+		error(1, "Could not find encoder.");
 		return false;
 	}
 
@@ -196,6 +206,7 @@ bool VideoCut::openOutputFile()
 	if (!m_videoStream)
 	{
 		//error message
+		error(1, "Could not make new video stream.");
 		return false;
 	}
 	m_videoStream->time_base.den = m_frameRate;
@@ -223,8 +234,9 @@ bool VideoCut::openOutputFile()
 		m_ofmtCtx->oformat->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	}
 
-	if (avcodec_parameters_to_context(m_encCtx, m_codecPar) < 0)
+	if ((ret = avcodec_parameters_to_context(m_encCtx, m_codecPar)) < 0)
 	{
+		error(ret, "Could not fill condec context from codec parameters.");
 		return false;
 	}
 
@@ -245,27 +257,26 @@ bool VideoCut::openOutputFile()
 	//av_dict_set(&d, "speed", "0", 0); // slow
 
 	// open codec
-	int err = avcodec_open2(m_encCtx, m_encCodec, &d);
-	if (err < 0)
+	if ((ret = avcodec_open2(m_encCtx, m_encCodec, &d)) < 0)
 	{
-		char buf[256];
-		av_strerror(err, buf, 256);
-		printf("%s", buf);
 		//error messsage
+		error(ret, "Could not open encoder.");
 		return false;
 	}
 
 	//open output file
-	if (avio_open(&m_ofmtCtx->pb, m_outFileName.c_str(), AVIO_FLAG_WRITE) < 0)
+	if ((ret = avio_open(&m_ofmtCtx->pb, m_outFileName.c_str(), AVIO_FLAG_WRITE)) < 0)
 	{
 		//error message
+		error(ret, "Could not open output file.");
 		return false;
 	}
 
 	// write the file header
-	if (avformat_write_header(m_ofmtCtx, nullptr) < 0)
+	if ((ret = avformat_write_header(m_ofmtCtx, nullptr)) < 0)
 	{
 		//error message
+		error(ret, "Coudl not write file header.");
 		return false;
 	}
 
@@ -366,15 +377,13 @@ bool VideoCut::decEncVideo()
 			// Encoder output: Receive the packet from the encoder 
 			if (0 == avcodec_receive_packet(m_encCtx, &packet))
 			{
-				/**
-				  * Time stamps! Tricky little bastards. Still figuring it out myself.
+				/*
+				  * Time stamps
 				  * DTS - Decoding Time Stamp
 				  * PTS - Presentation Time Stamp
 				  * DTS and PTS are usually the same unless we have B frames. This is
 				  * because B-frames depend on information of frames before and after
 				  * them and maybe be decoded in a sequence different from PTS.
-				  *
-				  * av_rescale_q_rnd(a,bq,cq,AVRounding) supposedly gives a*(bq/cq)
 				  *
 				  */
 
@@ -395,7 +404,6 @@ bool VideoCut::decEncVideo()
 				// If all goes well, we write the packet to output
 				if (0 == av_interleaved_write_frame(m_ofmtCtx, &packet))
 				{
-					//std::cout << "Frame: " << frameIndex << " encoded\n";
 					totalEncodedFrames++;
 					av_packet_unref(&packet);
 				}
@@ -434,12 +442,13 @@ bool VideoCut::decEncVideo()
 			i++;
 
 		}
-		else if (AVERROR_EOF == err) // No more packets
+		// No more packets
+		else if (AVERROR_EOF == err) 
 		{
 			std::cout << "End of file reached\n";
 			break;
 		}
-		else // How did it even get here?
+		else
 		{
 			std::cout << "Error\n";
 		}
@@ -454,6 +463,8 @@ bool VideoCut::decEncVideo()
 	std::cout << "Min diff: " << m_minDiff << "\n";	
 	std::cout << "Avg diff: " << m_avgDiff << "\n";	
 	std::cout << "Max diff: " << m_maxDiff << "\n";
+
+	std::cout << "Video completed!" << "\n";
 
 	// Remember to clean up
 	av_write_trailer(m_ofmtCtx);
@@ -589,5 +600,20 @@ void VideoCut::clean()
 	if (m_swsCtx != nullptr)
 	{
 		sws_freeContext(m_swsCtx);
+	}
+}
+
+void VideoCut::error(int a_err, std::string a_error)
+{
+	if (a_err != 1)
+	{
+		char buff[256];
+		av_strerror(a_err, buff, 256);
+		std::cout << a_error.c_str() << "\n" << "FFMPEG: " << buff << "\n";
+
+	}
+	else
+	{
+		std::cout << a_error.c_str() << "\n";
 	}
 }

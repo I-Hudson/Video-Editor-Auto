@@ -69,6 +69,10 @@ private:
 	*/
 	void clean();
 
+	/*
+	 Error function
+	*/
+	void error(int a_err, std::string a_error);
 /*
  All command functions
 */
