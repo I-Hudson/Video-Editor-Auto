@@ -4,6 +4,8 @@
 #include <map>
 #include <functional>
 #include <memory>
+#include <string>
+#include <sstream>
 
 class ConsoleCommands
 {

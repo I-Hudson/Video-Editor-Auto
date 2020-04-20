@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <direct.h>
+
 #define GetCurrentDir _getcwd
 
 VideoCut::VideoCut()
@@ -40,6 +41,8 @@ void VideoCut::run()
 	}
 
 	clean();
+
+	Remux();
 }
 
 /*
@@ -86,13 +89,13 @@ void VideoCut::openOutputFolderCommand()
 
 void VideoCut::frameCompareCommand()
 {
-	std::string helpMessage = R"(Video Cut Help:
-	--FrameCompare (val) Change the value of which frames are discarded (Clamped between 0 - 1).
-	--InputFile (val) Change the input file.
-	--OutputFile (val) Change the output file.
-								)";
-
-	std::cout << helpMessage.c_str() << "\n";
+	std::string message = R"(Please enter compare value: )";
+	std::cout << message.c_str();
+	std::string inputVal = ConsoleCommands::Get()->getInput();
+	float floatVal;
+	std::stringstream ss(inputVal.c_str());
+	ss >> floatVal;
+	m_frameCompare = floatVal;
 }
 
 void VideoCut::frameRateCommand()
@@ -119,6 +122,7 @@ bool VideoCut::openInputFile()
 		error(ret, "Input file could not be found or opened.");
 		return false;
 	}
+	m_inputVideoDuration = m_ifmtCtx->duration;
 
 	// find file info
 	if ((ret = avformat_find_stream_info(m_ifmtCtx, nullptr)) < 0)
@@ -182,6 +186,12 @@ bool VideoCut::openOutputFile()
 {
 	int ret = 0;
 
+	if (m_outFileName.substr(m_outFileName.find_last_of('.')) == ".mp4")
+	{
+		int pos = m_outFileName.find_last_of('.');
+		m_outFileName.replace(pos, m_outFileName.length() - pos, ".h264");
+	}
+
 	if ((ret = avformat_alloc_output_context2(&m_ofmtCtx, nullptr, nullptr, m_outFileName.c_str())) != 0)
 	{
 		//error message
@@ -209,6 +219,7 @@ bool VideoCut::openOutputFile()
 		error(1, "Could not make new video stream.");
 		return false;
 	}
+
 	m_videoStream->time_base.den = m_frameRate;
 	m_videoStream->time_base.num = 1;
 
@@ -221,10 +232,18 @@ bool VideoCut::openOutputFile()
 	m_codecPar->height = 1080;
 	m_codecPar->format = AV_PIX_FMT_YUV420P;
 
-	// Allocate and set Codec context
+
 	m_encCtx = avcodec_alloc_context3(m_encCodec);
+	if ((ret = avcodec_parameters_to_context(m_encCtx, m_codecPar)) < 0)
+	{
+		error(ret, "Could not fill condec context from codec parameters.");
+		return false;
+	}
+	// Allocate and set Codec context
 	m_encCtx->time_base.den = m_frameRate;
 	m_encCtx->time_base.num = 1;
+	m_encCtx->max_b_frames = 2;
+	m_encCtx->gop_size = 12;
 	if (m_codecPar->codec_id == AV_CODEC_ID_H264)
 	{
 		av_opt_set(m_encCtx, "preset", "ultrafast", 0);
@@ -234,11 +253,7 @@ bool VideoCut::openOutputFile()
 		m_ofmtCtx->oformat->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	}
 
-	if ((ret = avcodec_parameters_to_context(m_encCtx, m_codecPar)) < 0)
-	{
-		error(ret, "Could not fill condec context from codec parameters.");
-		return false;
-	}
+	avcodec_parameters_from_context(m_codecPar, m_encCtx);
 
 	// "create" an empty dictionary
 	AVDictionary *d = nullptr;          
@@ -265,11 +280,14 @@ bool VideoCut::openOutputFile()
 	}
 
 	//open output file
-	if ((ret = avio_open(&m_ofmtCtx->pb, m_outFileName.c_str(), AVIO_FLAG_WRITE)) < 0)
+	if (!(m_outFmt->flags & AVFMT_NOFILE))
 	{
-		//error message
-		error(ret, "Could not open output file.");
-		return false;
+		if ((ret = avio_open(&m_ofmtCtx->pb, m_outFileName.c_str(), AVIO_FLAG_WRITE)) < 0)
+		{
+			//error message
+			error(ret, "Could not open output file.");
+			return false;
+		}
 	}
 
 	// write the file header
@@ -279,6 +297,8 @@ bool VideoCut::openOutputFile()
 		error(ret, "Coudl not write file header.");
 		return false;
 	}
+
+	av_dump_format(m_ofmtCtx, 0, m_outFileName.c_str(), 1);
 
 	// Alloc both image and image temp
 	m_imageFrame = av_frame_alloc();
@@ -336,6 +356,8 @@ bool VideoCut::decEncVideo()
 {
 	AVPacket packet;
 
+	int totalFrames = ((double)m_ifmtCtx->duration / 1000.0 / 1000.0) * m_videoStream->time_base.den;
+
 	int i = 0;
 	int frameCounter = 0;
 	int frameIndex = -1;
@@ -343,7 +365,6 @@ bool VideoCut::decEncVideo()
 	int totalSkipedFrames = 0;
 	while (1)
 	{
-		frameIndex++;
 		av_init_packet(&packet);
 
 		int getFrame = getVideoFrame();
@@ -360,11 +381,17 @@ bool VideoCut::decEncVideo()
 			continue;
 		}
 
+		frameIndex++;
+
 		if (compareFrames((i > 0) ? true : false, i) == true)
 		{
-			std::cout << "Frame missed: " << frameIndex << "\n";
 			totalSkipedFrames++;
 			continue;
+		}
+
+		if (!m_swsCtx)
+		{
+			m_swsCtx = sws_getContext(m_encCtx->width, m_encCtx->height, AV_PIX_FMT_RGB24, m_encCtx->width, m_encCtx->height, AV_PIX_FMT_YUV420P, SWS_BICUBIC, 0, 0, 0);
 		}
 
 		sws_scale(m_swsCtx, m_imageFrame->data, m_imageFrame->linesize,
@@ -406,11 +433,18 @@ bool VideoCut::decEncVideo()
 				{
 					totalEncodedFrames++;
 					av_packet_unref(&packet);
+
+					int mod = totalEncodedFrames % (totalFrames / 5);
+					if (mod == 0)
+					{
+						progressBar(totalFrames, frameIndex + 1);
+					}
 				}
 			}
 		}
 		i++;
 	}
+	progressBar(totalFrames, frameIndex + 1);
 
 	int err = 0;
 	while (1)
@@ -494,6 +528,7 @@ bool VideoCut::compareFrames(bool a_compare, int a_frameIndex)
 	int prec = 1;
 	int precWidth = prec * 3;
 	int numSamples = m_decCtx->width / prec * m_decCtx->height / prec;
+
 	double rD = 0.0, gD = 0.0, bD = 0.0;
 	for (int y = 0; y < m_decCtx->height; y += prec)
 	{
@@ -513,10 +548,6 @@ bool VideoCut::compareFrames(bool a_compare, int a_frameIndex)
 	gD /= numSamples;
 	bD /= numSamples;
 
-	//std::cout << "Red Channel: " << rD << "\n";
-	//std::cout << "Green Channel: " << gD << "\n";
-	//std::cout << "Blue Channel: " << bD << "\n";
-
 	if (a_compare)
 	{
 		double rDiff = abs(rD - m_oldR);
@@ -534,8 +565,6 @@ bool VideoCut::compareFrames(bool a_compare, int a_frameIndex)
 		}
 
 		m_avgDiff += diff;
-
-		std::cout << "Frame[" << a_frameIndex << "]" << diff << "\n";
 
 		if (diff > m_frameCompare)
 		{
@@ -603,6 +632,104 @@ void VideoCut::clean()
 	}
 }
 
+void VideoCut::Remux()
+{
+	if (m_outFileName.substr(m_outFileName.find_first_of('.')) == ".h264")
+	{
+		m_inFileName = m_outFileName;
+		std::string newOutFileName = m_inFileName;
+		int pos = newOutFileName.find_first_of('.');
+		newOutFileName.replace(pos, newOutFileName.length() - pos, ".mp4");
+		
+		int ret;
+
+		if ((ret = avformat_open_input(&m_ifmtCtx, m_inFileName.c_str(), nullptr, nullptr)) != 0)
+		{
+			//error message
+			error(ret, "Input file could not be found or opened.");
+		}
+
+		// find file info
+		if ((ret = avformat_find_stream_info(m_ifmtCtx, nullptr)) < 0)
+		{
+			//error message
+			error(ret, "Input file could not find stream.");
+		}
+
+		if ((ret = avformat_alloc_output_context2(&m_ofmtCtx, nullptr, nullptr, newOutFileName.c_str())) != 0)
+		{
+			//error message
+			error(ret, "Could not alloc output context.");
+		}
+
+		AVStream* inVideoStream = m_ifmtCtx->streams[0];
+		AVStream* outVideoStream = avformat_new_stream(m_ofmtCtx, NULL);
+		if (!outVideoStream) {
+			error(0, "Failed to allocate output video stream");
+		}
+		outVideoStream->time_base = { 1, m_frameRate };
+		avcodec_parameters_copy(outVideoStream->codecpar, inVideoStream->codecpar);
+		outVideoStream->codecpar->codec_tag = 0;
+
+		if (!(m_ofmtCtx->oformat->flags & AVFMT_NOFILE)) {
+			if ((ret = avio_open(&m_ofmtCtx->pb, newOutFileName.c_str(), AVIO_FLAG_WRITE)) < 0) {
+				error(ret, "Failed to open output file");
+			}
+		}
+
+		if ((ret = avformat_write_header(m_ofmtCtx, 0)) < 0) {
+			error(ret, "Failed to write header to output file");
+		}
+
+		int totalFrames = m_ifmtCtx->duration * m_frameRate;
+		int currentFrame = 1;
+		AVPacket videoPkt;
+		int ts = 0;
+		while (true) {
+			if ((ret = av_read_frame(m_ifmtCtx, &videoPkt)) < 0) {
+				break;
+			}
+			videoPkt.stream_index = outVideoStream->index;
+			videoPkt.pts = ts;
+			videoPkt.dts = ts;
+			videoPkt.duration = av_rescale_q(videoPkt.duration, inVideoStream->time_base, outVideoStream->time_base);
+			ts += videoPkt.duration;
+			videoPkt.pos = -1;
+
+			if ((ret = av_interleaved_write_frame(m_ofmtCtx, &videoPkt)) < 0) {
+				error(ret, "Failed to mux packet");
+				av_packet_unref(&videoPkt);
+				break;
+			}
+			av_packet_unref(&videoPkt);
+			if (currentFrame == totalFrames / 10)
+			{
+				progressBar(totalFrames, currentFrame);
+			}
+			currentFrame++;
+		}
+
+		av_write_trailer(m_ofmtCtx);
+
+		if (m_ifmtCtx)
+		{
+			avformat_close_input(&m_ifmtCtx);
+			m_ifmtCtx = nullptr;
+		}
+		if (m_ofmtCtx && !(m_ofmtCtx->oformat->flags & AVFMT_NOFILE)) 
+		{
+			avio_closep(&m_ofmtCtx->pb);
+		}
+		if (m_ofmtCtx) 
+		{
+			avformat_free_context(m_ofmtCtx);
+			m_ofmtCtx = nullptr;
+		}
+
+		remove(m_inFileName.c_str());
+	}
+}
+
 void VideoCut::error(int a_err, std::string a_error)
 {
 	if (a_err != 1)
@@ -616,4 +743,22 @@ void VideoCut::error(int a_err, std::string a_error)
 	{
 		std::cout << a_error.c_str() << "\n";
 	}
+}
+
+void VideoCut::progressBar(const float total, float current, float barWidth)
+{
+	float progress = current / total;
+	std::cout << '[';
+	int pos = barWidth * progress;
+	for (int i = 0; i < barWidth; ++i)
+	{
+		if (i < pos) std::cout << '=';
+		else if (i == pos) std::cout << '>';
+		else std::cout << ' ';
+	}
+
+	std::cout << ']' << int(progress * 100.0f) << " %\r";
+	std::cout.flush();
+
+	std::cout << '\n';
 }

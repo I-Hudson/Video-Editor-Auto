@@ -16,7 +16,7 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 
-// libav resample
+	// libav resample
 
 #include <libavutil/opt.h>
 #include <libavutil/common.h>
@@ -70,12 +70,23 @@ private:
 	void clean();
 
 	/*
+	 Remux
+	*/
+	void Remux();
+
+	/*
 	 Error function
 	*/
 	void error(int a_err, std::string a_error);
-/*
- All command functions
-*/
+
+	/*
+	 Progress bar
+	*/
+	void progressBar(const float total, float current, float barWidth = 70.0f);
+
+	/*
+	 All command functions
+	*/
 public:
 	void helpCommand();
 	void inputCommand();
@@ -88,7 +99,7 @@ public:
 
 private:
 	/*
-	 Input and output files 
+	 Input and output files
 	*/
 	std::string m_inFileName;
 	std::string m_outFileName;
@@ -111,7 +122,8 @@ private:
 	//Encode
 	AVFormatContext* m_ofmtCtx;
 	AVOutputFormat* m_outFmt;
-	
+	int m_inputVideoDuration;
+
 	AVCodecParameters* m_codecPar;
 	AVCodecContext* m_encCtx;
 	AVCodec* m_encCodec;
@@ -123,7 +135,7 @@ private:
 	SwsContext* m_swsCtx;
 
 	/*
-	 Output frame rate and frame compare threshold 
+	 Output frame rate and frame compare threshold
 	*/
 	int m_frameRate = 30;
 	float m_frameCompare = 0.03f;
