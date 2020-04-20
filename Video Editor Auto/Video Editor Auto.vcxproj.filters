@@ -24,12 +24,21 @@
     <ClCompile Include="..\source\ConsoleCommands.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\source\Clip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\VideoCut.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\include\ConsoleCommands.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Clip.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\ResultCodes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
